@@ -1,3 +1,23 @@
-.idea
-cmake-build-debug
-CMakeList.txt
+# IDE and build directories
+.idea/
+cmake-build-debug/
+bin/
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.out
+*.exe
+
+# Generated data files
+*.dat
+*_index.dat
+*_random.dat
+*_random_index.dat
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake

@@ -1,3 +1,0 @@
-/Users/jotavsevla/CLionProjects/OSA-projects/LAB06_osa/cmake-build-debug/CMakeFiles/btree.dir
-/Users/jotavsevla/CLionProjects/OSA-projects/LAB06_osa/cmake-build-debug/CMakeFiles/edit_cache.dir
-/Users/jotavsevla/CLionProjects/OSA-projects/LAB06_osa/cmake-build-debug/CMakeFiles/rebuild_cache.dir
