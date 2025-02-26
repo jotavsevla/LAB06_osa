@@ -2,182 +2,518 @@
 #define BTREE_H
 
 #include <iostream>
-#include <vector>
-#include <iomanip>
-#include <queue>
-#include <stdexcept>
 
+using namespace std;
+// Classe para nós em uma árvore B de ordem 3
+// Na definição original:
+// - Cada nó pode ter no máximo 5 chaves (6 filhos)
+// - Cada nó não-folha (exceto a raiz) tem pelo menos 3 filhos (2 chaves)
+// - A raiz tem pelo menos 2 filhos se não for folha
+// - Todas as folhas aparecem no mesmo nível
 template <typename T>
-struct KeyAddressPair {
-    T key;
-    size_t address;
+class BTreeNode {
+public:
+    T keys[5];         // Um nó pode conter até 5 chaves
+    BTreeNode* children[6]; // Um nó pode ter até 6 filhos
+    int n;             // Número atual de chaves
+    bool leaf;         // Verdadeiro se o nó for folha
+
+    // Construtor
+    BTreeNode(bool isLeaf = true) : n(0), leaf(isLeaf) {
+        // Inicializa todos os ponteiros de filhos como nullptr
+        for (int i = 0; i < 6; i++) {
+            children[i] = nullptr;
+        }
+    }
+
+    // Destrutor para limpar a memória recursivamente
+    ~BTreeNode() {
+        if (!leaf) {
+            for (int i = 0; i <= n; i++) {
+                if (children[i] != nullptr) {
+                    delete children[i];
+                }
+            }
+        }
+    }
 };
 
+// Classe para árvore B
 template <typename T>
 class BTree {
 private:
-    struct Node {
-        std::vector<KeyAddressPair<T>> keys;
-        std::vector<Node*> children;
-        bool leaf;
+    BTreeNode<T>* root; // Ponteiro para raiz da árvore
+    int t;              // Grau mínimo (para ordem 3, t=3)
 
-        Node(bool isLeaf = true) : leaf(isLeaf) {}
-        ~Node() {
-            if (!leaf) {
-                for (auto child : children) {
-                    delete child;
-                }
-            }
-        }
-    };
+    // Função para dividir um filho cheio durante inserção
+    void splitChild(BTreeNode<T>* x, int i) {
+        // Cria um novo nó que vai receber metade das chaves de y
+        BTreeNode<T>* y = x->children[i];
+        BTreeNode<T>* z = new BTreeNode<T>(y->leaf);
 
-    Node* root;
-    size_t t; // Ordem da árvore (mínimo t chaves, máximo 2t chaves)
+        // Define z para receber t-1 (2) chaves de y
+        z->n = t - 1;
 
-    // Métodos auxiliares privados
-    void splitChild(Node* parent, size_t index) {
-        Node* y = parent->children[index];
-        Node* z = new Node(y->leaf);
-
-        // Para um nó com n chaves, a mediana está em n/2
-        size_t mid = y->keys.size() / 2;
-        KeyAddressPair<T> medianKey = y->keys[mid];
-
-        // Move a segunda metade das chaves para o novo nó
-        for (size_t j = mid + 1; j < y->keys.size(); j++) {
-            z->keys.push_back(y->keys[j]);
+        // Copia as últimas (t-1) chaves de y para z
+        for (int j = 0; j < t - 1; j++) {
+            z->keys[j] = y->keys[j + t];
         }
 
-        // Se não for folha, move os filhos correspondentes
+        // Se y não for folha, copia os últimos t filhos de y para z
         if (!y->leaf) {
-            for (size_t j = mid + 1; j <= y->keys.size(); j++) {
-                z->children.push_back(y->children[j]);
+            for (int j = 0; j < t; j++) {
+                z->children[j] = y->children[j + t];
+                y->children[j + t] = nullptr;  // Evita double-free
             }
         }
 
-        // Redimensiona o nó original
-        y->keys.resize(mid);
-        if (!y->leaf) {
-            y->children.resize(mid + 1);
+        // Reduz o número de chaves em y
+        y->n = t - 1;
+
+        // Cria espaço para o novo filho em x
+        for (int j = x->n; j >= i + 1; j--) {
+            x->children[j + 1] = x->children[j];
         }
 
-        // Insere a mediana no pai
-        parent->keys.insert(parent->keys.begin() + index, medianKey);
-        parent->children.insert(parent->children.begin() + index + 1, z);
+        // Conecta o novo filho em x
+        x->children[i + 1] = z;
+
+        // Move uma chave de y para x
+        for (int j = x->n - 1; j >= i; j--) {
+            x->keys[j + 1] = x->keys[j];
+        }
+        x->keys[i] = y->keys[t - 1];
+
+        // Incrementa o número de chaves em x
+        x->n = x->n + 1;
     }
 
-    void insertNonFull(Node* node, const KeyAddressPair<T>& keyAddress) {
-        int i = node->keys.size() - 1;
+    // Função para inserir em um nó não-cheio
+    void insertNonFull(BTreeNode<T>* x, T k) {
+        // Inicializa o índice como o último elemento
+        int i = x->n - 1;
 
-        if (node->leaf) {
+        // Se for folha, insere a chave diretamente
+        if (x->leaf) {
             // Encontra a posição para inserir a nova chave
-            while (i >= 0 && keyAddress.key < node->keys[i].key) {
+            while (i >= 0 && k < x->keys[i]) {
+                x->keys[i + 1] = x->keys[i];
                 i--;
             }
-            // Insere a chave na posição correta
-            node->keys.insert(node->keys.begin() + i + 1, keyAddress);
+
+            // Insere a nova chave na posição encontrada
+            x->keys[i + 1] = k;
+            x->n = x->n + 1;
         } else {
-            // Encontra o filho que deve receber a nova chave
-            while (i >= 0 && keyAddress.key < node->keys[i].key) {
+            // Encontra o filho que deve conter a chave
+            while (i >= 0 && k < x->keys[i]) {
                 i--;
             }
             i++;
 
-            // Se o filho está cheio, faz o split antes de inserir
-            if (node->children[i]->keys.size() >= 2 * t) {
-                splitChild(node, i);
-                if (keyAddress.key > node->keys[i].key) {
+            // Verifica se o filho está cheio
+            if (x->children[i]->n == 2 * t - 1) {
+                splitChild(x, i);
+
+                // Após a divisão, a chave do meio sobe
+                // e o filho se divide em dois
+                if (k > x->keys[i]) {
                     i++;
                 }
             }
-            insertNonFull(node->children[i], keyAddress);
+            insertNonFull(x->children[i], k);
         }
     }
 
-    bool searchKey(Node* node, const T& key) const {
+    // Função para percorrer a árvore (inorder)
+    void traverse(BTreeNode<T>* x) {
+        int i;
+        for (i = 0; i < x->n; i++) {
+            // Primeiro visita o filho da esquerda
+            if (!x->leaf) {
+                traverse(x->children[i]);
+            }
+            // Depois imprime a chave atual
+            cout << " " << x->keys[i];
+        }
+
+        // Visita o último filho
+        if (!x->leaf) {
+            traverse(x->children[i]);
+        }
+    }
+
+    // Função para buscar uma chave na árvore
+    BTreeNode<T>* search(BTreeNode<T>* x, T k) {
+        // Encontra a primeira chave maior ou igual a k
         int i = 0;
-        while (i < node->keys.size() && key > node->keys[i].key) {
+        while (i < x->n && k > x->keys[i]) {
             i++;
         }
 
-        if (i < node->keys.size() && key == node->keys[i].key) {
-            return true;
+        // Se a chave foi encontrada, retorna o nó
+        if (i < x->n && k == x->keys[i]) {
+            return x;
         }
 
-        if (node->leaf) {
-            return false;
+        // Se for folha e não encontrou, então não existe
+        if (x->leaf) {
+            return nullptr;
         }
 
-        return searchKey(node->children[i], key);
+        // Senão, busca no filho apropriado
+        return search(x->children[i], k);
     }
 
-    void printTree(Node* node, int level, std::ostream& os) const {
-        if (node) {
-            os << std::string(level * 4, ' ') << "[";
-            for (size_t i = 0; i < node->keys.size(); i++) {
-                os << node->keys[i].key;
-                if (i < node->keys.size() - 1) os << ", ";
-            }
-            os << "]" << std::endl;
+    // Função para obter o predecessor
+    T getPredecessor(BTreeNode<T>* node, int idx) {
+        // Continua movendo para o filho mais à direita
+        // até chegar a uma folha
+        BTreeNode<T>* current = node->children[idx];
+        while (!current->leaf) {
+            current = current->children[current->n];
+        }
+        // Retorna a última chave
+        return current->keys[current->n - 1];
+    }
 
-            if (!node->leaf) {
-                for (Node* child : node->children) {
-                    printTree(child, level + 1, os);
-                }
+    // Função para obter o sucessor
+    T getSuccessor(BTreeNode<T>* node, int idx) {
+        // Continua movendo para o filho mais à esquerda
+        // até chegar a uma folha
+        BTreeNode<T>* current = node->children[idx + 1];
+        while (!current->leaf) {
+            current = current->children[0];
+        }
+        // Retorna a primeira chave
+        return current->keys[0];
+    }
+
+    // Função para preencher o nó filho que tem menos que o mínimo de chaves
+    void fill(BTreeNode<T>* node, int idx) {
+        // Se o filho anterior tem chaves extras
+        if (idx != 0 && node->children[idx - 1]->n >= t) {
+            borrowFromPrev(node, idx);
+        }
+            // Se o próximo filho tem chaves extras
+        else if (idx != node->n && node->children[idx + 1]->n >= t) {
+            borrowFromNext(node, idx);
+        }
+            // Senão, mescla com um irmão
+        else {
+            if (idx != node->n) {
+                merge(node, idx);
+            } else {
+                merge(node, idx - 1);
             }
         }
     }
 
-    void destroyNode(Node* node) {
-        if (node) {
-            if (!node->leaf) {
-                for (auto child : node->children) {
-                    destroyNode(child);
-                }
+    // Função para pegar emprestado do irmão anterior
+    void borrowFromPrev(BTreeNode<T>* node, int idx) {
+        BTreeNode<T>* child = node->children[idx];
+        BTreeNode<T>* sibling = node->children[idx - 1];
+
+        // Desloca todas as chaves em child uma posição para frente
+        for (int i = child->n - 1; i >= 0; --i) {
+            child->keys[i + 1] = child->keys[i];
+        }
+
+        // Se child não for folha, desloca todos os seus filhos
+        if (!child->leaf) {
+            for (int i = child->n; i >= 0; --i) {
+                child->children[i + 1] = child->children[i];
             }
-            delete node;
+        }
+
+        // Define a primeira chave de child como a chave idx-1 do nó
+        child->keys[0] = node->keys[idx - 1];
+
+        // Move o último filho de sibling para child
+        if (!child->leaf) {
+            child->children[0] = sibling->children[sibling->n];
+        }
+
+        // Move a última chave de sibling para o nó
+        node->keys[idx - 1] = sibling->keys[sibling->n - 1];
+
+        // Atualiza contagem de chaves
+        child->n++;
+        sibling->n--;
+    }
+
+    // Função para pegar emprestado do irmão seguinte
+    void borrowFromNext(BTreeNode<T>* node, int idx) {
+        BTreeNode<T>* child = node->children[idx];
+        BTreeNode<T>* sibling = node->children[idx + 1];
+
+        // A chave idx do nó vai para child
+        child->keys[child->n] = node->keys[idx];
+
+        // O primeiro filho de sibling vai para o último filho de child
+        if (!child->leaf) {
+            child->children[child->n + 1] = sibling->children[0];
+        }
+
+        // A primeira chave de sibling vai para o nó
+        node->keys[idx] = sibling->keys[0];
+
+        // Desloca todas as chaves em sibling uma posição para trás
+        for (int i = 1; i < sibling->n; ++i) {
+            sibling->keys[i - 1] = sibling->keys[i];
+        }
+
+        // Desloca os filhos de sibling
+        if (!sibling->leaf) {
+            for (int i = 1; i <= sibling->n; ++i) {
+                sibling->children[i - 1] = sibling->children[i];
+            }
+        }
+
+        // Atualiza contagens
+        child->n++;
+        sibling->n--;
+    }
+
+    // Função para mesclar nós
+    void merge(BTreeNode<T>* node, int idx) {
+        BTreeNode<T>* child = node->children[idx];
+        BTreeNode<T>* sibling = node->children[idx + 1];
+
+        // Insere a chave do nó em child
+        child->keys[t - 1] = node->keys[idx];
+
+        // Copia todas as chaves de sibling para child
+        for (int i = 0; i < sibling->n; ++i) {
+            child->keys[i + t] = sibling->keys[i];
+        }
+
+        // Copia os filhos de sibling para child
+        if (!child->leaf) {
+            for (int i = 0; i <= sibling->n; ++i) {
+                child->children[i + t] = sibling->children[i];
+                sibling->children[i] = nullptr;  // Evita double-free
+            }
+        }
+
+        // Move todas as chaves após idx no nó uma posição para trás
+        for (int i = idx + 1; i < node->n; ++i) {
+            node->keys[i - 1] = node->keys[i];
+        }
+
+        // Move os ponteiros de filhos uma posição para trás
+        for (int i = idx + 2; i <= node->n; ++i) {
+            node->children[i - 1] = node->children[i];
+        }
+
+        // Atualiza contagens
+        child->n += sibling->n + 1;
+        node->n--;
+
+        // Deleta sibling
+        delete sibling;
+    }
+
+    // Função para remover um nó não-folha
+    void removeFromNonLeaf(BTreeNode<T>* node, int idx) {
+        T k = node->keys[idx];
+
+        // Caso 3a: Se o filho que precede k tem pelo menos t chaves
+        if (node->children[idx]->n >= t) {
+            // Encontrar o predecessor de k
+            T pred = getPredecessor(node, idx);
+            node->keys[idx] = pred;
+            remove(node->children[idx], pred);
+        }
+            // Caso 3b: Se o filho após k tem pelo menos t chaves
+        else if (node->children[idx + 1]->n >= t) {
+            // Encontrar o sucessor de k
+            T succ = getSuccessor(node, idx);
+            node->keys[idx] = succ;
+            remove(node->children[idx + 1], succ);
+        }
+            // Caso 3c: Ambos os filhos têm menos de t chaves
+        else {
+            merge(node, idx);
+            remove(node->children[idx], k);
+        }
+    }
+
+    // Função para remover de um nó folha
+    void removeFromLeaf(BTreeNode<T>* node, int idx) {
+        // Desloca todas as chaves após idx
+        for (int i = idx + 1; i < node->n; ++i) {
+            node->keys[i - 1] = node->keys[i];
+        }
+
+        // Reduz o número de chaves
+        node->n--;
+    }
+
+    // Função principal para remover uma chave da árvore
+    void remove(BTreeNode<T>* node, T k) {
+        int idx = 0;
+        // Encontra o índice da chave a ser removida
+        while (idx < node->n && node->keys[idx] < k) {
+            ++idx;
+        }
+
+        // A chave está presente neste nó
+        if (idx < node->n && node->keys[idx] == k) {
+            // Caso 1: Se o nó é folha
+            if (node->leaf) {
+                removeFromLeaf(node, idx);
+            }
+                // Caso 2: Se o nó não é folha
+            else {
+                removeFromNonLeaf(node, idx);
+            }
+        } else {
+            // Se este nó é folha, então a chave não existe na árvore
+            if (node->leaf) {
+                cout << "A chave " << k << " não está presente na árvore\n";
+                return;
+            }
+
+            // A chave a ser removida está no subtree enraizado no último filho
+            bool flag = (idx == node->n);
+
+            // Se o filho tem menos que t chaves, preenchê-lo
+            if (node->children[idx]->n < t) {
+                fill(node, idx);
+            }
+
+            // Se o último filho foi mesclado
+            if (flag && idx > node->n) {
+                remove(node->children[idx - 1], k);
+            } else {
+                remove(node->children[idx], k);
+            }
         }
     }
 
 public:
-    BTree(size_t order) : root(nullptr), t(order) {
-        if (order < 2) {
-            throw std::invalid_argument("B-Tree order must be at least 2");
-        }
-    }
+    // Construtor
+    BTree() : root(new BTreeNode<T>(true)), t(3) {}  // t=3 para árvore de ordem 3
 
+    // Destrutor
     ~BTree() {
-        destroyNode(root);
-    }
-
-    void insert(const KeyAddressPair<T>& keyAddress) {
-        if (root == nullptr) {
-            root = new Node();
-            root->keys.push_back(keyAddress);
-            return;
+        if (root != nullptr) {
+            delete root;
         }
+    }
 
-        // Se a raiz está cheia, cria nova raiz
-        if (root->keys.size() >= t) {
-            Node* newRoot = new Node(false);
-            newRoot->children.push_back(root);
-            root = newRoot;
-            splitChild(root, 0);
+    // Função para percorrer a árvore
+    void traverse() {
+        if (root != nullptr) {
+            traverse(root);
+            cout << endl;
         }
-
-        insertNonFull(root, keyAddress);
+    }
+    // Retorna o ponteiro para o nó raiz (necessário para o gerenciador de arquivos)
+    BTreeNode<T>* getRoot() const {
+        return root;
     }
 
-    bool search(const T& key) const {
-        return root && searchKey(root, key);
+    // Função para buscar uma chave
+    BTreeNode<T>* search(T k) {
+        return (root == nullptr) ? nullptr : search(root, k);
     }
 
-    void print(std::ostream& os = std::cout) const {
+    // Função para inserir uma chave
+    void insert(T k) {
+        // Se a raiz estiver cheia, a árvore cresce em altura
+        if (root->n == 2 * t - 1) {
+            // Aloca nova raiz
+            BTreeNode<T>* s = new BTreeNode<T>(false);
+
+            // Faz a antiga raiz ser filha da nova
+            s->children[0] = root;
+
+            // Divide a antiga raiz e move uma chave para a nova raiz
+            splitChild(s, 0);
+
+            // Nova raiz tem dois filhos. Decide qual vai ter a nova chave
+            int i = 0;
+            if (s->keys[0] < k) {
+                i++;
+            }
+            insertNonFull(s->children[i], k);
+
+            // Troca a raiz
+            root = s;
+        } else {
+            // Se a raiz não estiver cheia, insere diretamente
+            insertNonFull(root, k);
+        }
+    }
+
+    // Função para remover uma chave
+    void remove(T k) {
         if (!root) {
-            os << "Árvore vazia" << std::endl;
+            cout << "A árvore está vazia\n";
             return;
         }
-        printTree(root, 0, os);
+
+        // Chama a função para remover
+        remove(root, k);
+
+        // Se a raiz ficar sem chaves
+        if (root->n == 0) {
+            BTreeNode<T>* tmp = root;
+            if (root->leaf) {
+                root = nullptr;
+            } else {
+                root = root->children[0];
+            }
+
+            // Libera a antiga raiz
+            tmp->children[0] = nullptr;  // Evita double-free
+            delete tmp;
+        }
+    }
+
+    // Verifica se a árvore está vazia
+    bool isEmpty() const {
+        return root == nullptr || root->n == 0;
+    }
+
+    // Limpa toda a árvore
+    void clear() {
+        if (root != nullptr) {
+            delete root;
+            root = new BTreeNode<T>(true);
+        }
+    }
+
+    // Imprime a árvore em níveis (útil para depuração)
+    void printTree() {
+        if (isEmpty()) {
+            cout << "Árvore vazia." << endl;
+            return;
+        }
+
+        cout << "Estrutura da árvore B:" << endl;
+        printLevel(root, 0);
+        cout << endl;
+    }
+
+private:
+    // Função auxiliar para imprimir a árvore em níveis
+    void printLevel(BTreeNode<T>* node, int level) {
+        if (node == nullptr) return;
+
+        cout << "Nível " << level << ": ";
+        for (int i = 0; i < node->n; i++) {
+            cout << node->keys[i] << " ";
+        }
+        cout << endl;
+
+        if (!node->leaf) {
+            for (int i = 0; i <= node->n; i++) {
+                printLevel(node->children[i], level + 1);
+            }
+        }
     }
 };
 
