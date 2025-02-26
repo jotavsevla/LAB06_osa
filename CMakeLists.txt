@@ -12,6 +12,8 @@ set(CMAKE_BUILD_TYPE Debug)
 add_executable(btree
         src/main.cpp
         src/BTree.cpp
+        src/BTreeFileManager.cpp
+        src/IntegerRecord.cpp
 )
 
 # Adiciona o diretório de headers

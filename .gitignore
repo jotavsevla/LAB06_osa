@@ -1,23 +1,29 @@
-# IDE and build directories
-.idea/
-cmake-build-debug/
-bin/
+cat > .gitignore << 'EOF'
+# Diretórios de build e saída
+/cmake-build-debug/
+/bin/
 
-# Build artifacts
-*.o
-*.a
-*.so
-*.out
-*.exe
+# Arquivos objeto
+**/*.o
+**/*.obj
 
-# Generated data files
-*.dat
-*_index.dat
-*_random.dat
-*_random_index.dat
+# Arquivos de dados gerados
+**/*.dat
+**/*_index.dat
+**/*_random.dat
+**/*_random_index.dat
 
-# CMake generated files
+# Arquivos de projeto do CLion
+/.idea/
+
+# Arquivos temporários do macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Arquivos gerados pelo CMake
 CMakeCache.txt
 CMakeFiles/
-Makefile
 cmake_install.cmake
+EOF
